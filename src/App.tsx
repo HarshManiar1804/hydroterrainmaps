@@ -51,7 +51,7 @@ function App() {
       </div>
 
       {/* Navbar - Overlay on Map */}
-      <div className="absolute left-0 top-[88px] h-[calc(100%-88px)] w-[300px] md:w-[380px] bg-white bg-opacity-10 p-4 z-10 overflow-y-auto">
+      <div className="absolute left-0 top-[88px] h-[calc(100%-88px)] w-[350px] md:w-[380px] bg-white bg-opacity-10 p-4 z-10 overflow-y-auto">
         <Navbar
           data={data}
           setData={setData}

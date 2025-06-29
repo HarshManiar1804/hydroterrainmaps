@@ -9,6 +9,9 @@ import VectorSource from "ol/source/Vector";
 import GeoJSON from "ol/format/GeoJSON";
 import { Overlay } from "ol";
 import XYZ from "ol/source/XYZ";
+import ImageLayer from "ol/layer/Image";
+import Static from "ol/source/ImageStatic";
+import { getCenter } from "ol/extent";
 import * as GeoTIFF from "geotiff";
 import {
   Basin,
@@ -22,7 +25,6 @@ import { Fill, Stroke, Style, Text, Circle as CircleStyle } from "ol/style";
 import Feature from "ol/Feature";
 import Point from "ol/geom/Point";
 
-
 const MapComponent = ({ data, road, railway, canals, talukas, districts, theme, landuse, elevation, slope, aspect, mapState }: MapComponentProps) => {
   const mapRef = useRef<HTMLDivElement>(null);
   const [layerList, setLayerList] = useState<string[]>([]);
@@ -33,6 +35,9 @@ const MapComponent = ({ data, road, railway, canals, talukas, districts, theme, 
   const [selectedBasin, setSelectedBasin] = useState<Basin | null>(null);
   const popupRef = useRef<HTMLDivElement>(document.createElement('div'));
 
+  // Define the extent for your PNG images (EPSG:4326)
+  const imageExtent = [72.4500108944436363, 21.6538526169347278, 75.2870019434714663, 24.5990281104358210];
+
   const defaultStyleOptionsBasin = {
     radius: 2,
     circleFillColor: (elevation || slope || aspect) ? "black" : "red",
@@ -42,6 +47,7 @@ const MapComponent = ({ data, road, railway, canals, talukas, districts, theme, 
     lineStrokeWidth: (elevation || slope || aspect) ? 2 : 1,
     fillColor: "rgba(0, 0, 255, 0.1)",
   };
+
   const fetchRiverLayers = async () => {
     const geoJSONFiles: { fileName: string; channel: string }[] = [];
     const promises = [];
@@ -115,6 +121,7 @@ const MapComponent = ({ data, road, railway, canals, talukas, districts, theme, 
     const vectorLayers = layerList.map((file) =>
       createVectorLayer(file, defaultStyleOptionsBasin)
     );
+
     const styleRiver = new Style({
       stroke: new Stroke({
         color: 'rgba(0, 0, 255, 0)'
@@ -154,7 +161,6 @@ const MapComponent = ({ data, road, railway, canals, talukas, districts, theme, 
       }),
     });
 
-
     const railwayStyle = new Style({
       stroke: new Stroke({
         color: '#e31a1c', // Red
@@ -169,7 +175,6 @@ const MapComponent = ({ data, road, railway, canals, talukas, districts, theme, 
       })
     });
 
-
     const roadStyle = new Style({
       stroke: new Stroke({
         color: '#878787', // Gray base color
@@ -182,7 +187,6 @@ const MapComponent = ({ data, road, railway, canals, talukas, districts, theme, 
         placement: 'line',
       })
     });
-
 
     const basinLayer = new VectorLayer({
       source: new VectorSource({
@@ -234,7 +238,6 @@ const MapComponent = ({ data, road, railway, canals, talukas, districts, theme, 
       style: canalStyle,
     });
 
-
     const railwayLayer = new VectorLayer({
       source: new VectorSource({
         url: "/Railway.geojson", // Ensure correct path
@@ -242,7 +245,6 @@ const MapComponent = ({ data, road, railway, canals, talukas, districts, theme, 
       }),
       style: railwayStyle,
     });
-
 
     const roadLayer = new VectorLayer({
       source: new VectorSource({
@@ -362,24 +364,23 @@ const MapComponent = ({ data, road, railway, canals, talukas, districts, theme, 
       visible: districts // Sync visibility with districts layer
     });
 
-    const landuseBaseUrl = "https://earthengine.googleapis.com/v1/projects/ee-himani202302/maps/5c23e4dbf9085ff9159f65e3fa93a7ab-ff952d69912029c40c199ddff46431b7/tiles";
-    const elevationBaseUrl = "https://earthengine.googleapis.com/v1/projects/ee-himani202302/maps/439eab434f6b6bf51f39ee79b7348b1e-19557a5c1c7e844d7ac200c9003ac727/tiles";
-    const slopeBaseUrl = "https://earthengine.googleapis.com/v1/projects/ee-himani202302/maps/89b8d6eae9f54d5a31017d11935e99ce-5cad597eed4a6db38970046115a6c6f8/tiles";
-    const aspectBaseUrl = "https://earthengine.googleapis.com/v1/projects/ee-himani202302/maps/d4336fc697dde32f57436160707bc1ff-54f37e406741806e52bba49f53cd6923/tiles";
+    // Create single PNG image layers instead of XYZ tile layers
+    const createImageLayer = (imageUrl: string, opacity: number = 1) => {
+      return new ImageLayer({
+        source: new Static({
+          url: imageUrl,
+          projection: 'EPSG:4326', // Geographic coordinate system
+          imageExtent: imageExtent, // [minX, minY, maxX, maxY]
+        }),
+        opacity: opacity
+      });
+    };
 
-    const createXYZSource = (baseUrl: string) => new XYZ({
-      tileUrlFunction: (tileCoord: number[]) => {
-        if (!tileCoord) return '';
-        const [z, x, y] = tileCoord;
-        return `${baseUrl}/${z}/${x}/${y}`;
-      },
-      crossOrigin: 'anonymous',
-    });
-
-    const landuseSource = createXYZSource(landuseBaseUrl);
-    const elevationSource = createXYZSource(elevationBaseUrl);
-    const slopeSource = createXYZSource(slopeBaseUrl);
-    const aspectSource = createXYZSource(aspectBaseUrl);
+    // Create image layers for different data types
+    const landuseImageLayer = landuse ? createImageLayer("/Landuse_Edge.png", 0.8) : null;
+    const elevationImageLayer = elevation ? createImageLayer("/Elevation_Edge.png", 0.8) : null;
+    const slopeImageLayer = slope ? createImageLayer("/Slope_Edge.png", 0.8) : null;
+    const aspectImageLayer = aspect ? createImageLayer("/Aspect_Edge.png", 0.8) : null;
 
     // Create marker source and layer
     const markerSource = new VectorSource();
@@ -412,26 +413,30 @@ const MapComponent = ({ data, road, railway, canals, talukas, districts, theme, 
       offset: [0, -10]
     });
 
+    // Build layers array conditionally
+    const mapLayers = [
+      baseLayer,
+      // Add image layers conditionally
+      ...(landuseImageLayer ? [landuseImageLayer] : []),
+      ...(elevationImageLayer ? [elevationImageLayer] : []),
+      ...(slopeImageLayer ? [slopeImageLayer] : []),
+      ...(aspectImageLayer ? [aspectImageLayer] : []),
+      basinLayer,
+      basinCentroidsLayer,
+      streamsLayer,
+      ...(talukas ? [talukaBoundaryLayer, talukaCentroidsLayer] : []),
+      ...(districts ? [districtBoundaryLayer, districtCentroidsLayer] : []),
+      ...(road ? [roadLayer] : []),
+      ...(railway ? [railwayLayer] : []),
+      ...(canals ? [canalLayer] : []),
+      ...vectorLayers,
+      ...riverLayers,
+      ...(!landuse && (elevation || slope || aspect) ? [markerLayer] : []),
+    ];
+
     const map = new Map({
       target: mapRef.current || undefined,
-      layers: [
-        baseLayer,
-        ...(landuse ? [new TileLayer({ source: landuseSource })] : []),
-        ...(elevation ? [new TileLayer({ source: elevationSource })] : []),
-        ...(slope ? [new TileLayer({ source: slopeSource })] : []),
-        ...(aspect ? [new TileLayer({ source: aspectSource })] : []),
-        basinLayer,
-        basinCentroidsLayer,
-        streamsLayer,
-        ...(talukas ? [talukaBoundaryLayer, talukaCentroidsLayer] : []),
-        ...(districts ? [districtBoundaryLayer, districtCentroidsLayer] : []),
-        ...(road ? [roadLayer] : []),
-        ...(railway ? [railwayLayer] : []),
-        ...(canals ? [canalLayer] : []),
-        ...vectorLayers,
-        ...riverLayers,
-        ...(!landuse && (elevation || slope || aspect) ? [markerLayer] : []),
-      ],
+      layers: mapLayers,
       view: new View({
         center: fromLonLat([74.2684, 23.2803]),
         zoom: 7.3,
@@ -453,7 +458,6 @@ const MapComponent = ({ data, road, railway, canals, talukas, districts, theme, 
       map.forEachFeatureAtPixel(event.pixel, (_, layer) => {
         if (riverLayers.includes(layer as VectorLayer)) {
           hoveredRiver = true;
-
         }
       });
       setIsRiverLayerHovered(hoveredRiver);
@@ -466,7 +470,6 @@ const MapComponent = ({ data, road, railway, canals, talukas, districts, theme, 
       }
       // Only proceed if at least one of elevation, slope, or aspect is active
       else if (theme === "hydrology") {
-        console.log("hydro")
         let clickedBasin = null;
         let clickedRiver = null;
 
@@ -512,7 +515,6 @@ const MapComponent = ({ data, road, railway, canals, talukas, districts, theme, 
         const coord = event.coordinate;
         const [lon, lat] = coord;
 
-        console.log(`Clicked at: Lat ${lat}, Lon ${lon}`);
 
         // Determine which GeoTIFF file to load based on active layer
         let tifFileName = "";
@@ -547,8 +549,6 @@ const MapComponent = ({ data, road, railway, canals, talukas, districts, theme, 
           const pixelValue = Array.isArray(rasters[0])
             ? rasters[0][pixelIndex]
             : (rasters[0] as any)[pixelIndex];
-
-          console.log(`${layerType} Value at (${lat}, ${lon}): ${pixelValue}`);
 
           // Clear existing markers and add new one
           markerSource.clear();
@@ -586,7 +586,6 @@ const MapComponent = ({ data, road, railway, canals, talukas, districts, theme, 
       })
       .catch(error => console.error("Error loading Mahi Streams GeoJSON:", error));
 
-
     return () => map.setTarget(undefined);
   }, [layerList, riverLayers, road, railway, canals, talukas, districts, theme, landuse, elevation, slope, aspect, mapState, selectedBasin, selectedRiverInfo]);
 
@@ -604,7 +603,6 @@ const MapComponent = ({ data, road, railway, canals, talukas, districts, theme, 
           }
         </div>
       )}
-
     </div>
   );
 };
